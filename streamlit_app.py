@@ -1,18 +1,28 @@
 import streamlit as st
-import requests
-import json
+import joblib
+import pandas as pd
+import numpy as np
 import os
 
 st.set_page_config(page_title="Fraud Detection of Counterfeit Products", page_icon="🕵️", layout="centered")
 
 st.title("🕵️ Fraud Detection Demo")
-st.markdown("Enter the feature values below and click Predict to see if the instance is fraudulent.")
+st.markdown("Enter the feature values below and click Predict to see if the instance is fraudulent. (Local model mode)")
 
-# Backend URL handling
-# First try Streamlit secrets, then environment variable, finally default localhost
-DEFAULT_API_URL = "http://localhost:8501/predict"
+# Load model once (Option B: no Flask backend needed)
+MODEL_PATH = "fraud_detection_model.pkl"
+@st.cache_resource(show_spinner=True)
+def load_model():
+    try:
+        model_loaded = joblib.load(MODEL_PATH)
+        return model_loaded, None
+    except Exception as e:
+        return None, str(e)
 
-API_URL = os.getenv("API_URL", DEFAULT_API_URL)
+model, model_err = load_model()
+if model_err:
+    st.error(f"Failed to load model: {model_err}")
+    st.stop()
 
 with st.form("fraud_form"):
     vendor_score = st.number_input("Vendor Score (1.0 - 5.0)", min_value=1.0, max_value=5.0, value=4.5, step=0.1)
@@ -26,33 +36,49 @@ with st.form("fraud_form"):
     submitted = st.form_submit_button("Predict")
 
 if submitted:
-    payload = {
-        "vendor_score": vendor_score,
-        "image_qty": image_qty,
-        "site_age": site_age,
-        "delivery_period": delivery_period,
-        "typo_count": typo_count,
-        "payment_options": payment_options,
-        "cost_usd": cost_usd
+    input_row = {
+        "vendor_score": float(vendor_score),
+        "image_qty": int(image_qty),
+        "site_age": float(site_age),
+        "delivery_period": int(delivery_period),
+        "typo_count": int(typo_count),
+        "payment_options": int(payment_options),
+        "cost_usd": float(cost_usd)
     }
+    df = pd.DataFrame([input_row])
     try:
-        with st.spinner("Contacting model..."):
-            resp = requests.post(API_URL, json=payload, timeout=10)
-        if resp.status_code == 200:
-            data = resp.json()
-            pred_label = data.get("prediction_label", "?")
-            confidence = data.get("confidence", 0.0)
-            col1, col2 = st.columns(2)
-            if pred_label.lower().startswith("fraud"):
-                col1.error(f"Prediction: {pred_label}")
+        if model is None:
+            st.error("Model not loaded.")
+            st.stop()
+        with st.spinner("Scoring..."):
+            pred = model.predict(df)[0]
+            if hasattr(model, 'predict_proba'):
+                probs = model.predict_proba(df)[0]
+                if len(probs) == 2:
+                    prob_not, prob_fraud = probs
+                else:
+                    prob_fraud = probs[0]
+                    prob_not = 1 - prob_fraud
             else:
-                col1.success(f"Prediction: {pred_label}")
-            col2.info(f"Confidence: {confidence:.3f}")
-            with st.expander("Raw Response"):
-                st.json(data)
+                prob_fraud = np.nan
+                prob_not = np.nan
+        label = 'Fraud' if int(pred) == 1 else 'Not Fraud'
+        confidence = float(max(prob_fraud, prob_not)) if not np.isnan(prob_fraud) else None
+        col1, col2 = st.columns(2)
+        if label == 'Fraud':
+            col1.error(f"Prediction: {label}")
         else:
-            st.error(f"API Error {resp.status_code}: {resp.text}")
+            col1.success(f"Prediction: {label}")
+        if confidence is not None:
+            col2.info(f"Confidence: {confidence:.3f}")
+        with st.expander("Details"):
+            st.write("Input:")
+            st.json(input_row)
+            if confidence is not None:
+                st.write({"probability_not_fraud": float(prob_not), "probability_fraud": float(prob_fraud)})
     except Exception as e:
-        st.error(f"Request failed: {e}")
+        st.error(f"Prediction failed: {e}")
+
+st.caption("Loaded local model: " + MODEL_PATH)
 
 

@@ -181,4 +181,4 @@ if __name__ == '__main__':
         expected = '1.6.0'
         if sklearn.__version__ != expected:
             logger.warning(f"Running with scikit-learn {sklearn.__version__}; model trained on {expected}. Consider installing scikit-learn=={expected}.")
-    app.run(debug=True, host='0.0.0.0', port=8501)
+    app.run(debug=True, host='0.0.0.0', port=8000)
