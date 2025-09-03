@@ -1,0 +1,12 @@
+# Ignore datasets
+*.csv
+# Keep model file
+!fraud_detection_model.pkl
+
+# Ignore notebooks and docs
+*.ipynb
+*.pdf
+
+# Python cache
+__pycache__/
+*.pyc
