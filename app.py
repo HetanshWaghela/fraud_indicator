@@ -3,12 +3,22 @@ import joblib
 import pandas as pd
 import numpy as np
 import logging
+import warnings
+try:
+    import sklearn
+    from sklearn import exceptions as _sk_exceptions  # type: ignore
+    InconsistentVersionWarning = getattr(_sk_exceptions, 'InconsistentVersionWarning', None)
+except Exception:  # pragma: no cover
+    InconsistentVersionWarning = None
+    sklearn = None
 
 app = Flask(__name__)
-
-# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Suppress specific sklearn version mismatch warning after we pin correct version
+if InconsistentVersionWarning is not None:
+    warnings.filterwarnings("ignore", category=InconsistentVersionWarning)
 
 # Load model at startup
 try:
@@ -23,7 +33,6 @@ REQUIRED_FEATURES = ['vendor_score', 'image_qty', 'site_age', 'delivery_period',
                      'typo_count', 'payment_options', 'cost_usd']
 
 def validate_input(data):
-    """Validate input data"""
     if not isinstance(data, dict):
         return False, "Input must be a JSON object"
     
@@ -111,49 +120,6 @@ def predict():
         logger.error(f"Error in prediction: {str(e)}")
         return jsonify({'error': f'Prediction failed: {str(e)}'}), 500
 
-@app.route('/predict/batch', methods=['POST'])
-def predict_batch():
-    """Handle batch predictions"""
-    try:
-        if model is None:
-            return jsonify({'error': 'Model not loaded'}), 500
-        
-        data = request.get_json()
-        if not data or 'samples' not in data:
-            return jsonify({'error': 'No samples provided. Use format: {"samples": [...]'}), 400
-        
-        samples = data['samples']
-        if not isinstance(samples, list):
-            return jsonify({'error': 'Samples must be a list'}), 400
-        
-        results = []
-        for i, sample in enumerate(samples):
-            is_valid, message = validate_input(sample)
-            if not is_valid:
-                results.append({
-                    'sample_index': i,
-                    'error': message
-                })
-                continue
-            
-            df = pd.DataFrame([sample], columns=REQUIRED_FEATURES)
-            prediction = model.predict(df)[0]
-            probabilities = model.predict_proba(df)[0]
-            
-            results.append({
-                'sample_index': i,
-                'prediction': int(prediction),
-                'prediction_label': 'Fraud' if prediction == 1 else 'Not Fraud',
-                'confidence': float(max(probabilities)),
-                'probability_fraud': float(probabilities[1]) if len(probabilities) > 1 else float(probabilities[0])
-            })
-        
-        return jsonify({'predictions': results}), 200
-        
-    except Exception as e:
-        logger.error(f"Error in batch prediction: {str(e)}")
-        return jsonify({'error': f'Batch prediction failed: {str(e)}'}), 500
-
 @app.route('/health', methods=['GET'])
 def health():
     """Health check endpoint"""
@@ -211,4 +177,8 @@ def home():
     return jsonify(docs), 200
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=8000)
+    if sklearn is not None:
+        expected = '1.6.0'
+        if sklearn.__version__ != expected:
+            logger.warning(f"Running with scikit-learn {sklearn.__version__}; model trained on {expected}. Consider installing scikit-learn=={expected}.")
+    app.run(debug=True, host='0.0.0.0', port=8501)

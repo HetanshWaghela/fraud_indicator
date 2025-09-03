@@ -3,14 +3,14 @@ import requests
 import json
 import os
 
-st.set_page_config(page_title="Fraud Detection", page_icon="🕵️", layout="centered")
+st.set_page_config(page_title="Fraud Detection of Counterfeit Products", page_icon="🕵️", layout="centered")
 
 st.title("🕵️ Fraud Detection Demo")
 st.markdown("Enter the feature values below and click Predict to see if the instance is fraudulent.")
 
 # Backend URL handling
 # First try Streamlit secrets, then environment variable, finally default localhost
-DEFAULT_API_URL = "http://localhost:8000/predict"
+DEFAULT_API_URL = "http://localhost:8501/predict"
 
 API_URL = os.getenv("API_URL", DEFAULT_API_URL)
 
@@ -55,4 +55,4 @@ if submitted:
     except Exception as e:
         st.error(f"Request failed: {e}")
 
-st.caption("Backend endpoint: " + API_URL)
+
